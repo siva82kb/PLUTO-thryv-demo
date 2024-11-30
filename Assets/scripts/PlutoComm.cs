@@ -380,26 +380,12 @@ public static class ConnectToRobot
         }
         else
         {
-
             JediComm.InitSerialComm(_port);
         }
-        if (JediComm.serPort == null)
+        if (JediComm.serPort != null)
         {
-        }
-
-        else
-        {
-
-            if (JediComm.serPort.IsOpen)
-            {
-
-                UnityEngine.Debug.Log("Already Opended");
-                JediComm.Disconnect();
-            }
-
             if (JediComm.serPort.IsOpen == false)
             {
-
                 UnityEngine.Debug.Log(_port);
                 JediComm.Connect();
             }

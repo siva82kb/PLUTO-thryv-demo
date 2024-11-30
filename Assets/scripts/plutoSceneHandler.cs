@@ -19,10 +19,12 @@ using UnityEditor.PackageManager;
 public class Pluto_SceneHandler : MonoBehaviour
 {
     public TextMeshProUGUI textDataDisplay;
+    
     // Calibration
     public UnityEngine.UI.Toggle tglCalibSelect;
     public Dropdown ddCalibMech;
     public TextMeshProUGUI textCalibMessage;
+    
     // Control
     public UnityEngine.UI.Toggle tglControlSelect;
     public Dropdown ddControlSelect;
@@ -32,6 +34,10 @@ public class Pluto_SceneHandler : MonoBehaviour
     public UnityEngine.UI.Slider sldrCtrlBound;
     public TMP_InputField inputDuration;
     public UnityEngine.UI.Button btnNextRandomTarget;
+
+    // AAN Scene Button
+    public UnityEngine.UI.Button btnAANDemo;
+    
     // Data logging
     public UnityEngine.UI.Toggle tglDataLog;
 
@@ -92,6 +98,13 @@ public class Pluto_SceneHandler : MonoBehaviour
         }
         // Udpate UI
         UpdateUI();
+
+        // Load demo scene?
+        // Check for left arrow key
+        if (Input.GetKeyDown(KeyCode.RightArrow))
+        {
+            SceneManager.LoadScene("aan_demo");
+        }
     }
 
     public void AttachControlCallbacks()
@@ -110,6 +123,9 @@ public class Pluto_SceneHandler : MonoBehaviour
 
         // Button click.
         btnNextRandomTarget.onClick.AddListener(delegate { OnNextRandomTarget(); });
+
+        // AAN Demo Button click.
+        btnAANDemo.onClick.AddListener(() => SceneManager.LoadScene(1));
 
         // Listen to PLUTO's event
         PlutoComm.OnButtonReleased += onPlutoButtonReleased;
@@ -486,6 +502,12 @@ public class Pluto_SceneHandler : MonoBehaviour
                 tglCalibSelect.isOn = false;
                 break;
         }
+    }
+
+    void OnSceneUnloaded(Scene scene)
+    {
+        Debug.Log("Unloading Diagnostics scene.");
+        ConnectToRobot.disconnect();
     }
 
     private void OnApplicationQuit()
