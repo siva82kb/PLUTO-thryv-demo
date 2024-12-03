@@ -22,12 +22,13 @@ public static class PlutoComm
         "NO Mechanism"
     };
     public static readonly string[] CALIBRATION = new string[] { "NOCALLIB", "YESCALLIB" };
-    public static readonly string[] CONTROLTYPE = new string[] { "NONE", "POSITION", "RESIST", "TORQUE" };
+    public static readonly string[] CONTROLTYPE = new string[] { "NONE", "POSITION", "RESIST", "TORQUE", "POSITIONAAN" };
     public static readonly string[] CONTROLTYPETEXT = new string[] {
         "None",
         "Position",
         "Resist",
         "Torque",
+        "Position-AAN"
     };
     public static readonly int[] SENSORNUMBER = new int[] {
         4,  // SENSORSTREAM 
@@ -44,7 +45,9 @@ public static class PlutoComm
         "SET_CONTROL_TYPE",
         "SET_CONTROL_TARGET",
         "SET_DIAGNOSTICS",
-        "SET_CONTROL_BOUND"
+        "SET_CONTROL_BOUND",
+        "RESET_PACKETNO",
+        "SET_CONTROL_DIR"
     };
     public static readonly int[] CALIBANGLE = new int[] { 0, 136, 136, 180, 93 }; // The first zero value is a dummy value.
     public static readonly double[] TORQUE = new double[] { -MAXTORQUE, MAXTORQUE };
@@ -140,7 +143,7 @@ public static class PlutoComm
     {
         get
         {
-            return currentStateData[5];
+            return currentStateData[6];
         }
     }
     static public float angle
@@ -169,6 +172,13 @@ public static class PlutoComm
         get
         {
             return currentStateData[4] / 255f;
+        }
+    }
+    static public sbyte controlDir
+    {
+        get
+        {
+            return (sbyte) currentStateData[5];
         }
     }
     static public float target
@@ -249,8 +259,10 @@ public static class PlutoComm
                 }
                 // Update the control bound
                 currentStateData[4] = rawBytes[(nSensors + 1) * 4 + 6 + 1];
-                // Update the button state
+                // Update the control direction
                 currentStateData[5] = rawBytes[(nSensors + 1) * 4 + 6 + 2];
+                // Update the button state
+                currentStateData[6] = rawBytes[(nSensors + 1) * 4 + 6 + 3];
                 break;
             case "VERSION":
                 // Read the bytes into a string.
@@ -267,7 +279,7 @@ public static class PlutoComm
         frameRate = 1 / (runTime - prevRunTime);
 
         // Check if the button has been released.
-        if (previousStateData[5] == 0 && currentStateData[5] == 1)
+        if (previousStateData[6] == 0 && currentStateData[6] == 1)
         {
             OnButtonReleased?.Invoke();
         }
@@ -360,6 +372,22 @@ public static class PlutoComm
             new byte[] {
                 (byte)GetPlutoCodeFromLabel(INDATATYPE, "SET_CONTROL_BOUND"),
                 _ctrlboundbyte
+            }
+        );
+    }
+
+
+    public static void setControlDir(sbyte ctrlDir)
+    {
+        // Limit the value to be between 0 and 1.
+        if ((ctrlDir != 1) && (ctrlDir != -1))
+        {
+            ctrlDir = 0;
+        }
+        JediComm.SendMessage(
+            new byte[] {
+                (byte)GetPlutoCodeFromLabel(INDATATYPE, "SET_CONTROL_DIR"),
+                (byte) ctrlDir
             }
         );
     }

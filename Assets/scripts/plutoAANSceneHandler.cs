@@ -18,6 +18,7 @@ using UnityEditor.PackageManager;
 using System.Runtime.CompilerServices;
 using XCharts;
 using XCharts.Runtime;
+using UnityEditor.Compilation;
 
 public class Pluto_AAN_SceneHandler : MonoBehaviour
 {
@@ -56,15 +57,17 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
     {
         Rest,           // Resting state
         SetTarget,      // Set the target
-        MovingControl,  // Start Movement control.
-        Moving,         // All controls set, just moving.
+        Moving,         // Start Movement.
+        Success,        // Successfull reach
+        Failure,        // Failed reach
     }
     private DiscreteMovementTrialState _trialState;
     private static readonly IReadOnlyList<float> stateDurations = Array.AsReadOnly(new float[] {
-        2.50f,               // Rest duration
-        0.25f,               // Target set duration
-        tgtDuration,         // Maximum movement duration
-        5.00f - tgtDuration, // Maximum movement duration
+        2.50f,          // Rest duration
+        0.25f,          // Target set duration
+        5.00f,          // Maximum movement duration
+        0.25f,          // Successful reach
+        0.25f,          // Failed reach
     });
     private const float tgtHoldDuration = 1f;
     private float _trialTarget = 0f;
@@ -78,6 +81,7 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
     // Magical minimum value where the mechanisms mostly move without too much instability.
     private float currControlBound = 0.16f;
     private const float cbChangeDuration = 2.0f;
+    private sbyte currControlDir = 0;
     private float _currCBforDisplay;
     private int successRate;
 
@@ -85,10 +89,16 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
     private const float xmax = 12f;
 
     // Logging related variables
-    private bool isLogging = false;
-    private string logFileName = null;
-    private StreamWriter logFile = null;
-    private string _dataLogDir = "Assets\\data\\diagnostics\\";
+    // Variable to indicate if logging is to be started from the start of the next trial,
+    // if the demo is already running.
+    //private bool readyToLog = false;
+    //private bool isLogging = false;
+    private string fileNamePrefix = null;
+    private string logRawFileName = null;
+    private StreamWriter logRawFile = null;
+    private string logAdaptFileName = null;
+    private StreamWriter logAdaptFile = null;
+    private string _dataLogDir = "Assets\\data\\aan_demo\\";
 
     // Start is called before the first frame update
     void Start()
@@ -107,6 +117,8 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
         PlutoComm.setDiagnosticMode();
         // Update the UI when starting
         UpdateUI();
+        // Create the data directory if needed.
+        CreateDirectoryIfNeeded(_dataLogDir);
     }
 
     // Update is called once per frame
@@ -128,29 +140,11 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
 
         // Run trial state machine
         RunTrialStateMachine();
-
-        // Load diagnostics scene?
-        // Check for left arrow key
-        //Debug.Log(Input.GetKeyDown(KeyCode.LeftArrow));
-        //if (Input.GetKeyDown(KeyCode.LeftArrow))
-        //{
-        //    SceneManager.LoadScene("plutoDiagnostiocs");
-        //}
-        if (Input.anyKeyDown)
-        {
-            Debug.Log("A key was pressed!");
-        }
-        if (Input.GetKeyDown(KeyCode.Space))
-            Debug.Log("Space key detected!");
-        if (Input.GetKeyDown(KeyCode.LeftArrow))
-            Debug.Log("Left Arrow Pressed");
-        if (Input.GetKeyDown(KeyCode.RightArrow))
-            Debug.Log("Right Arrow Pressed");
     }
 
     void FixedUpdate()
     {
-        try
+        if (PlutoComm.CALIBANGLE[PlutoComm.mechanism] != 0)
         {
             // Update actual position
             actualCircle.transform.position = new Vector3(
@@ -159,13 +153,14 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
                 actualCircle.transform.position.z
             );
         }
-        catch (Exception ex) { }
     }
 
     private void RunTrialStateMachine()
     {
         float _deltime = trialDuration - stateStartTime;
         bool _statetimeout = _deltime >= stateDurations[(int)_trialState];
+        // Time when target is reached.
+        bool _tgtreached = Math.Abs(_trialTarget - PlutoComm.angle) <= 5.0f;
         switch (_trialState)
         {
             case DiscreteMovementTrialState.Rest:
@@ -178,60 +173,36 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
             case DiscreteMovementTrialState.SetTarget:
                 if (_statetimeout)
                 {
-                    SetTrialState(DiscreteMovementTrialState.MovingControl);
-                }
-                break;
-            case DiscreteMovementTrialState.MovingControl:
-                // Update control bound smoothly.
-                UpdateControlBoundSmoothly();
-                // Update the position control target smoothly.
-                UpdatePositionTargetSmoothly();
-                // Check if time has run out.
-                if (_statetimeout)
-                {
                     SetTrialState(DiscreteMovementTrialState.Moving);
                 }
                 break;
             case DiscreteMovementTrialState.Moving:
-                if (_statetimeout)
+                // Update control bound smoothly.
+                UpdateControlBoundSmoothly();
+                // Update the position control target smoothly.
+                UpdatePositionTargetSmoothly();
+                // Check if the target has been reached
+                if (_tgtreached)
                 {
-                    if (successRate >= 0)
-                    {
-                        successRate = -1;
-                    } else
-                    {
-                        successRate -= 1;
-                    }
-                    SetTrialState(DiscreteMovementTrialState.Rest);
+                    _tempIntraStateTimer += Time.deltaTime;
                 }
                 else
                 {
-                    // Check if the target has been reached.
-                    if (Math.Abs(_trialTarget - PlutoComm.angle) <= 5.0f)
-                    {
-                        // Increment the intrastate timer.
-                        _tempIntraStateTimer += Time.deltaTime;
-                        // Check if target has been held for the required amount of time.
-                        if (_tempIntraStateTimer >= tgtHoldDuration)
-                        {
-                            // Change state to Done.
-                            if (successRate < 0)
-                            {
-                                successRate = 1;
-                            }
-                            else
-                            {
-                                successRate += 1;
-                            }
-                            SetTrialState(DiscreteMovementTrialState.Rest);
-                        }
-
-                    } else
-                    {
-                        // Reset the intrastate timer.
-                        _tempIntraStateTimer = 0;
-                    }
+                    _tempIntraStateTimer = 0;
                 }
+                // Check if target time has been reached.
+                if (_tempIntraStateTimer >= tgtHoldDuration)
+                {
+                    SetTrialState(DiscreteMovementTrialState.Success);
+                }
+                else if (_statetimeout)
+                {
+                    SetTrialState(DiscreteMovementTrialState.Failure);
+                }
+                break;
+            case DiscreteMovementTrialState.Success:
+            case DiscreteMovementTrialState.Failure:
+                if (_statetimeout) SetTrialState(DiscreteMovementTrialState.Rest);
                 break;
         }
     }
@@ -256,6 +227,12 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
                 }
                 trialNo += 1; 
                 UpdateCBAdaptDetailsDisplay();
+                // Break if logging is not selected.
+                if (tglDataLog.isOn == false) break;
+                // Log data.
+                UpdateLogFiles();
+                // Reset target timer (for display purposes).
+                _tempIntraStateTimer = 0f;
                 break;
             case DiscreteMovementTrialState.SetTarget:
                 // Random select target from the appropriate range.
@@ -268,16 +245,40 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
                     targetCircle.transform.position.z
                 );
                 break;
-            case DiscreteMovementTrialState.MovingControl:
+            case DiscreteMovementTrialState.Moving:
                 // Start the position control to the tatget location.
                 _initialTarget = PlutoComm.angle;
                 _finalTarget = _trialTarget;
+                // Set control direction
+                currControlDir = (sbyte)Math.Sign(_finalTarget - _initialTarget);
+                PlutoComm.setControlDir(currControlDir);
+                _tempIntraStateTimer = 0f;
                 break;
-            case DiscreteMovementTrialState.Moving:
+            case DiscreteMovementTrialState.Success:
+                if (successRate < 0)
+                {
+                    successRate = 1;
+                }
+                else
+                {
+                    successRate += 1;
+                }
+                // Update adaptation row.
+                WriteTrialRowInfo(1);
+                break;
+            case DiscreteMovementTrialState.Failure:
+                if (successRate >= 0)
+                {
+                    successRate = -1;
+                }
+                else
+                {
+                    successRate -= 1;
+                }
+                WriteTrialRowInfo(0);
                 break;
         }
         stateStartTime = trialDuration;
-        _tempIntraStateTimer = 0f;
     }
 
     public void AttachControlCallbacks()
@@ -311,7 +312,6 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
         // Limit _t between 0 and 1.
         _t = Mathf.Clamp(_t, 0, 1);
         // Compute the CB value using the minimum jerk trajectory.
-        Debug.Log($"{prevControlBound}, {currControlBound}, {_t}, {_currCBforDisplay}");
         _currCBforDisplay = prevControlBound + (currControlBound - prevControlBound) * (10 * Mathf.Pow(_t, 3) - 15 * Mathf.Pow(_t, 4) + 6 * Mathf.Pow(_t, 5));
         // Update control bound.
         PlutoComm.setControlBound(_currCBforDisplay);
@@ -331,7 +331,7 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
     private void onNewPlutoData()
     {
         // Log data if needed. Else move on.
-        if (logFile == null) return;
+        if (logRawFile == null) return;
 
         // Log data
         String[] rowcomps = new string[]
@@ -349,12 +349,16 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
             $"{PlutoComm.torque}",
             $"{PlutoComm.control}",
             $"{PlutoComm.controlBound}",
+            $"{PlutoComm.controlDir}",
             $"{PlutoComm.target}",
             $"{PlutoComm.err}",
             $"{PlutoComm.errDiff}",
             $"{PlutoComm.errSum}"
         };
-        logFile.WriteLine(String.Join(", ", rowcomps));
+        if (logRawFile != null)
+        { 
+            logRawFile.WriteLine(String.Join(", ", rowcomps));
+        }
     }
 
     private void OnStartStopDemo()
@@ -370,12 +374,14 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
         {
             btnStartStop.GetComponentInChildren<TMP_Text>().text = "Stop Demo";
             isRunning = true;
+            // Set Control mode.
+            PlutoComm.setControlType("POSITIONAAN");
+            PlutoComm.setControlBound(currControlBound);
+            PlutoComm.setControlDir(0);
+            trialNo = 0;
+            successRate = 0;
             // Start the state machine.
             SetTrialState(DiscreteMovementTrialState.Rest);
-            // Set Control mode.
-            PlutoComm.setControlType("POSITION");
-            PlutoComm.setControlBound(currControlBound);
-            trialNo = 0;
         }
     }
 
@@ -393,42 +399,107 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
     private void OnDataLogChange()
     {
         // Close file.
-        closeLogFile(logFile);
-        logFile = null;
-        // Check what needs to done.
-        if (logFileName == null)
-        {
-            // We are not logging to a file. Start logging.
-            logFileName = _dataLogDir + $"logfile_{DateTime.Today:yyyy-MM-dd}.csv";
-            logFile = createLogFile(logFileName);
-        }
-        else
-        {
-            logFileName = null;
-        }
+        CloseRawLogFile();
+        CloseAdaptLogFile();
+        logRawFile = null;
+        logAdaptFile = null;
+        fileNamePrefix = null;
     }
 
-    private StreamWriter createLogFile(string logFileName)
+    private void UpdateLogFiles()
     {
-        StreamWriter _sw = new StreamWriter(logFileName, false);
+        if (fileNamePrefix == null)
+        {
+            fileNamePrefix = $"{DateTime.Now:yyyy-MM-dd_HH-mm-ss}";
+        }
+        CreateDirectoryIfNeeded(_dataLogDir + fileNamePrefix + "\\");
+        // Create the adaptation log file.
+        if (logAdaptFile == null)
+        {
+            CreateAdaptLogFile();
+        }
+        // Create the raw log file after closing the current file.
+        CloseRawLogFile();
+        CreateRawLogFile();
+    }
+
+    private void CreateRawLogFile()
+    {
+        // Set the file name.
+        logRawFileName = $"rawlogfile_{trialNo:D3}.csv";
+        logRawFile = new StreamWriter(_dataLogDir + fileNamePrefix + "\\" + logRawFileName, false);
         // Write the header row.
-        _sw.WriteLine($"DeviceID = {PlutoComm.deviceId}");
-        _sw.WriteLine($"FirmwareVersion = {PlutoComm.version}");
-        _sw.WriteLine($"CompileDate = {PlutoComm.compileDate}");
-        _sw.WriteLine($"Actuated = {PlutoComm.actuated}");
-        _sw.WriteLine($"Start Datetime = {DateTime.Now:yyyy/MM/dd HH-mm-ss.ffffff}");
-        _sw.WriteLine("time, packetno, status, datatype, errorstatus, controltype, calibration, mechanism, button, angle, torque, control, controlbound, target, error, errordiff, errorsum");
-        return _sw;
+        logRawFile.WriteLine($"DeviceID = {PlutoComm.deviceId}");
+        logRawFile.WriteLine($"FirmwareVersion = {PlutoComm.version}");
+        logRawFile.WriteLine($"CompileDate = {PlutoComm.compileDate}");
+        logRawFile.WriteLine($"Actuated = {PlutoComm.actuated}");
+        logRawFile.WriteLine($"Start Datetime = {DateTime.Now:yyyy/MM/dd HH-mm-ss.ffffff}");
+        logRawFile.WriteLine("time, packetno, status, datatype, errorstatus, controltype, calibration, mechanism, button, angle, torque, control, controlbound, controldir, target, error, errordiff, errorsum");
     }
 
-    private void closeLogFile(StreamWriter logFile)
+    private void CreateAdaptLogFile()
     {
-        if (logFile != null)
+        // Set the file name.
+        logAdaptFileName = $"adaptlogfile.csv";
+        logAdaptFile = new StreamWriter(_dataLogDir + fileNamePrefix + "\\" + logAdaptFileName, false);
+        // Write the header row.
+        logAdaptFile.WriteLine($"DeviceID = {PlutoComm.deviceId}");
+        logAdaptFile.WriteLine($"FirmwareVersion = {PlutoComm.version}");
+        logAdaptFile.WriteLine($"CompileDate = {PlutoComm.compileDate}");
+        logAdaptFile.WriteLine($"Actuated = {PlutoComm.actuated}");
+        logAdaptFile.WriteLine($"Start Datetime = {DateTime.Now:yyyy/MM/dd HH-mm-ss.ffffff}");
+        logAdaptFile.WriteLine("trialno, targetposition, initialposition, success, successrate, controlbound, controldir, filename");
+    }
+
+    private void WriteTrialRowInfo(byte successfailure)
+    {
+        // Log data if needed. Else move on.
+        if (logAdaptFile == null) return;
+
+        // Log data
+        String[] rowcomps = new string[]
+        {
+            $"{trialNo}",
+            $"{_trialTarget}",
+            $"{_initialTarget}",
+            $"{successfailure}",
+            $"{successRate}",
+            $"{currControlBound}",
+            $"{currControlDir}",
+            $"{logRawFileName}"
+        };
+        if (logAdaptFile != null)
+        {
+            logAdaptFile.WriteLine(String.Join(", ", rowcomps));
+        }
+    }
+
+    private void CloseRawLogFile()
+    {
+        if (logRawFile != null)
         {
             // Close the file properly and create a new handle.
-            logFile.Close();
-            logFile.Dispose();
+            logRawFile.Close();
         }
+        logRawFileName = null;
+        logRawFile = null;
+    }
+
+    private void CloseAdaptLogFile()
+    {
+        if (logAdaptFile != null)
+        {
+            // Close the file properly and create a new handle.
+            logAdaptFile.Close();
+
+            // Close any raw file that is open.
+            CloseRawLogFile();
+
+            // Clear filename prefix.
+            fileNamePrefix = null;
+        }
+        logAdaptFileName = null;
+        logAdaptFile = null;
     }
 
     private void onPlutoButtonReleased()
@@ -497,7 +568,7 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
         }
         string _dispstr = "Trial Details\n";
         _dispstr += "-------------\n";
-        _dispstr += $"Duration         : {trialDuration:F2}s";
+        _dispstr += $"Duration         : {trialDuration:F2}s ({_tempIntraStateTimer:F2}s)";
         _dispstr += $"\nState            : {_trialState}";
         _dispstr += $"\nState Durtation  : {trialDuration - stateStartTime:F2}s";
         if (_trialState == DiscreteMovementTrialState.Rest)
@@ -508,7 +579,6 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
             _dispstr += $"\nTarget           : {_trialTarget:F2} [{_currTgtForDisplay:F2}]";
         }
         _dispstr += $"\nControl Bound    : {_currCBforDisplay:F2}";
-        
         textTrialDetails.SetText(_dispstr);
     }
 
@@ -522,11 +592,23 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
         }
         string _dispstr = "Control Bound Adpatation Details\n";
         _dispstr += "--------------------------------\n";
-        _dispstr += $"Trial No.          : {trialNo}\n";
-        _dispstr += $"Success Rate       : {successRate}\n";
-        _dispstr += $"Current Ctrl Bound : {currControlBound:F2}\n";
-        _dispstr += $"Prev Ctrl Bound    : {prevControlBound:F2}\n";
+        _dispstr += $"Trial No.           : {trialNo}\n";
+        _dispstr += $"Success Rate        : {successRate}\n";
+        _dispstr += $"Current Ctrl Bound  : {currControlBound:F2}\n";
+        _dispstr += $"Prev Ctrl Bound     : {prevControlBound:F2}\n";
+        _dispstr += $"Adaptation Log File : {logAdaptFileName}\n";
+        _dispstr += $"Raw Log File        : {logRawFileName}";
         textCBAdaptDetailsDisplay.SetText(_dispstr);
+    }
+
+    private void CreateDirectoryIfNeeded(string dirname)
+    {
+        // Ensure the directory exists
+        string directoryPath = Path.GetDirectoryName(dirname);
+        if (!Directory.Exists(directoryPath))
+        {
+            Directory.CreateDirectory(directoryPath);
+        }
     }
 
     void OnSceneUnloaded(Scene scene)
