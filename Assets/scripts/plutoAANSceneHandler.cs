@@ -124,6 +124,9 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
+        // PLUTO heartbeat.
+        PlutoComm.sendHeartbeat();
+
         UpdateUI();
 
         // Update trial detials
@@ -523,8 +526,7 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
     private void UpdateDataDispay()
     {
         // Update the data display.
-        string _dispstr = "";
-        _dispstr += $"\nTime          : {PlutoComm.currentTime.ToString()}";
+        string _dispstr = $"Time          : {PlutoComm.currentTime.ToString()}";
         _dispstr += $"\nDev ID        : {PlutoComm.deviceId}";
         _dispstr += $"\nF/W Version   : {PlutoComm.version}";
         _dispstr += $"\nCompile Date  : {PlutoComm.compileDate}";
@@ -533,10 +535,10 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
         _dispstr += $"\nDev Run Time  : {PlutoComm.runTime:F2}";
         _dispstr += $"\nFrame Rate    : {PlutoComm.frameRate:F2}";
         _dispstr += $"\nStatus        : {PlutoComm.OUTDATATYPE[PlutoComm.dataType]}";
-        _dispstr += $"\nControl Type  : {PlutoComm.CONTROLTYPE[PlutoComm.controlType]}";
-        _dispstr += $"\nCalibration   : {PlutoComm.CALIBRATION[PlutoComm.calibration]}";
-        _dispstr += $"\nError         : {PlutoComm.errorStatus}";
         _dispstr += $"\nMechanism     : {PlutoComm.MECHANISMS[PlutoComm.mechanism]}";
+        _dispstr += $"\nCalibration   : {PlutoComm.CALIBRATION[PlutoComm.calibration]}";
+        _dispstr += $"\nError         : {PlutoComm.errorString}";
+        _dispstr += $"\nControl Type  : {PlutoComm.CONTROLTYPE[PlutoComm.controlType]}";
         _dispstr += $"\nActuated      : {PlutoComm.actuated}";
         _dispstr += $"\nButton State  : {PlutoComm.button}";
         _dispstr += "\n";
@@ -547,7 +549,7 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
         }
         _dispstr += $"\nTorque        : {0f,6:F2} Nm";
         _dispstr += $"\nControl       : {PlutoComm.control,6:F2}";
-        _dispstr += $"\nControl Bound : {PlutoComm.controlBound,6:F2}"; 
+        _dispstr += $"\nCtrl Bnd (Dir): {PlutoComm.controlBound,6:F2} ({PlutoComm.controlDir})";
         _dispstr += $"\nTarget        : {PlutoComm.target,6:F2}";
         if (PlutoComm.OUTDATATYPE[PlutoComm.dataType] == "DIAGNOSTICS")
         {

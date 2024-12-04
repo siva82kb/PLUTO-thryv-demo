@@ -87,6 +87,9 @@ public class Pluto_SceneHandler : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
+        // Pluto heartbeat
+        PlutoComm.sendHeartbeat();
+
         // Check if there is an changing target being sent to the robot.
         if (_changingTarget)
         {
@@ -442,10 +445,10 @@ public class Pluto_SceneHandler : MonoBehaviour
         _dispstr += $"\nDev Run Time  : {PlutoComm.runTime:F2}";
         _dispstr += $"\nFrame Rate    : {PlutoComm.frameRate:F2}";
         _dispstr += $"\nStatus        : {PlutoComm.OUTDATATYPE[PlutoComm.dataType]}";
-        _dispstr += $"\nControl Type  : {PlutoComm.CONTROLTYPE[PlutoComm.controlType]}";
-        _dispstr += $"\nCalibration   : {PlutoComm.CALIBRATION[PlutoComm.calibration]}";
-        _dispstr += $"\nError         : {PlutoComm.errorStatus}";
         _dispstr += $"\nMechanism     : {PlutoComm.MECHANISMS[PlutoComm.mechanism]}";
+        _dispstr += $"\nCalibration   : {PlutoComm.CALIBRATION[PlutoComm.calibration]}";
+        _dispstr += $"\nError         : {PlutoComm.errorString}";
+        _dispstr += $"\nControl Type  : {PlutoComm.CONTROLTYPE[PlutoComm.controlType]}";
         _dispstr += $"\nActuated      : {PlutoComm.actuated}";
         _dispstr += $"\nButton State  : {PlutoComm.button}";
         _dispstr += "\n";
@@ -475,12 +478,19 @@ public class Pluto_SceneHandler : MonoBehaviour
     {
         int _mechInx = ddCalibMech.value + 1;
         // Run the calibration state machine.
+        Debug.Log($"{calibState} " + $"{PlutoComm.CALIBRATION[PlutoComm.calibration]}");
         switch (calibState)
         {
             case CalibrationState.WAIT_FOR_ZERO_SET:
-                calibState = CalibrationState.ZERO_SET;
-                // Get the current mechanism for calibration.
-                PlutoComm.calibrate(PlutoComm.MECHANISMS[_mechInx]);
+                if (PlutoComm.CALIBRATION[PlutoComm.calibration] == "NOCALIB")
+                {
+                    // Get the current mechanism for calibration.
+                    PlutoComm.calibrate(PlutoComm.MECHANISMS[_mechInx]);
+                }
+                else
+                {
+                    calibState = CalibrationState.ZERO_SET;
+                }
                 break;
             case CalibrationState.ZERO_SET:
                 if (Math.Abs(PlutoComm.angle) >= 0.9 * PlutoComm.CALIBANGLE[_mechInx] 
@@ -508,7 +518,7 @@ public class Pluto_SceneHandler : MonoBehaviour
         switch (calibState)
         {
             case CalibrationState.WAIT_FOR_ZERO_SET:
-                textCalibMessage.SetText($"Bring '{_mech}' to zero position, and press PLUTO button to set zero.");
+                textCalibMessage.SetText($"Bring '{_mech}' to zero position, and press PLUTO button TWICE to set zero.");
                 break;
             case CalibrationState.ZERO_SET:
                 textCalibMessage.SetText($"[{PlutoComm.angle,7:F2}] Zero set. Move to the other extreme position and press PLUTO button to set zero.");

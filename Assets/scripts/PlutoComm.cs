@@ -21,7 +21,7 @@ public static class PlutoComm
         "FME2",
         "NO Mechanism"
     };
-    public static readonly string[] CALIBRATION = new string[] { "NOCALLIB", "YESCALLIB" };
+    public static readonly string[] CALIBRATION = new string[] { "NOCALIB", "YESCALIB" };
     public static readonly string[] CONTROLTYPE = new string[] { "NONE", "POSITION", "RESIST", "TORQUE", "POSITIONAAN" };
     public static readonly string[] CONTROLTYPETEXT = new string[] {
         "None",
@@ -36,7 +36,7 @@ public static class PlutoComm
         7   // DIAGNOSTICS
     };
     public static readonly double MAXTORQUE = 1.0; // Nm
-    public static readonly int[] INDATATYPECODES = new int[] { 0, 1, 2, 3, 4, 5, 6 };
+    public static readonly int[] INDATATYPECODES = new int[] { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x80 };
     public static readonly string[] INDATATYPE = new string[] {
         "GET_VERSION",
         "CALIBRATE",
@@ -47,18 +47,18 @@ public static class PlutoComm
         "SET_DIAGNOSTICS",
         "SET_CONTROL_BOUND",
         "RESET_PACKETNO",
-        "SET_CONTROL_DIR"
+        "SET_CONTROL_DIR",
+        "HEARTBEAT"
+    };
+    public static readonly string[] ERRORTYPES = new string[] {
+        "ANGSENSERR",
+        "MCURRSENSERR",
+        "NOHEARTBEAT"
     };
     public static readonly int[] CALIBANGLE = new int[] { 0, 136, 136, 180, 93 }; // The first zero value is a dummy value.
     public static readonly double[] TORQUE = new double[] { -MAXTORQUE, MAXTORQUE };
     public static readonly double[] POSITION = new double[] { -135, 0 };
     public static readonly double HOCScale = 0.10752; // 3.97 * Math.PI / 180;
-
-    // Function to get the number corresponding to a label.
-    public static int GetPlutoCodeFromLabel(string[] array, string value)
-    {
-        return Array.IndexOf(array, value);
-    }
 
     // Button released event.
     public delegate void PlutoButtonReleasedEvent();
@@ -109,6 +109,23 @@ public static class PlutoComm
         get
         {
             return currentStateData[2];
+        }
+    }
+    static public string errorString
+    {
+        get
+        {
+            if (currentStateData[2] == 0) return "NOERROR";
+            string _str = "";
+            for (int i = 0; i < 16; i++)
+            {
+                if ((errorStatus & (1 << i)) != 0)
+                {
+                    _str += (_str != "") ? " | " : "";
+                    _str += ERRORTYPES[i];
+                }
+            }
+            return _str;
         }
     }
     static public int controlType
@@ -311,30 +328,30 @@ public static class PlutoComm
 
     public static void startSensorStream()
     {
-        JediComm.SendMessage(new byte[] { (byte)GetPlutoCodeFromLabel(INDATATYPE, "START_STREAM") });
+        JediComm.SendMessage(new byte[] { (byte)INDATATYPECODES[Array.IndexOf(INDATATYPE, "START_STREAM")] });
     }
 
     public static void stopSensorStream()
     {
-        JediComm.SendMessage(new byte[] { (byte)GetPlutoCodeFromLabel(INDATATYPE, "STOP_STREAM") });
+        JediComm.SendMessage(new byte[] { (byte)INDATATYPECODES[Array.IndexOf(INDATATYPE, "STOP_STREAM")] });
     }
 
     public static void setDiagnosticMode()
     {
-        JediComm.SendMessage(new byte[] { (byte)GetPlutoCodeFromLabel(INDATATYPE, "SET_DIAGNOSTICS") });
+        JediComm.SendMessage(new byte[] { (byte)INDATATYPECODES[Array.IndexOf(INDATATYPE, "SET_DIAGNOSTICS")] });
     }
 
     public static void getVersion()
     {
-        JediComm.SendMessage(new byte[] { (byte)GetPlutoCodeFromLabel(INDATATYPE, "GET_VERSION") });
+        JediComm.SendMessage(new byte[] { (byte)INDATATYPECODES[Array.IndexOf(INDATATYPE, "GET_VERSION")] });
     }
 
     public static void calibrate(string mech)
     {
         JediComm.SendMessage(
             new byte[] {
-                (byte)GetPlutoCodeFromLabel(INDATATYPE, "CALIBRATE"),
-                (byte)GetPlutoCodeFromLabel(MECHANISMS, mech)
+                (byte)INDATATYPECODES[Array.IndexOf(INDATATYPE, "CALIBRATE")],
+                (byte)Array.IndexOf(MECHANISMS, mech)
             }
         );
     }
@@ -343,8 +360,8 @@ public static class PlutoComm
     {
         JediComm.SendMessage(
             new byte[] {
-                (byte)GetPlutoCodeFromLabel(INDATATYPE, "SET_CONTROL_TYPE"),
-                (byte)GetPlutoCodeFromLabel(CONTROLTYPE, controlType)
+                (byte)INDATATYPECODES[Array.IndexOf(INDATATYPE, "SET_CONTROL_TYPE")],
+                (byte)Array.IndexOf(CONTROLTYPE, controlType)
             }
         );
     }
@@ -354,7 +371,7 @@ public static class PlutoComm
         byte[] targetBytes = BitConverter.GetBytes(target);
         JediComm.SendMessage(
             new byte[] {
-                (byte)GetPlutoCodeFromLabel(INDATATYPE, "SET_CONTROL_TARGET"),
+                (byte)INDATATYPECODES[Array.IndexOf(INDATATYPE, "SET_CONTROL_TARGET")],
                 targetBytes[0],
                 targetBytes[1],
                 targetBytes[2],
@@ -370,7 +387,7 @@ public static class PlutoComm
         byte _ctrlboundbyte = (byte) (ctrlBound * 255);
         JediComm.SendMessage(
             new byte[] {
-                (byte)GetPlutoCodeFromLabel(INDATATYPE, "SET_CONTROL_BOUND"),
+                (byte)INDATATYPECODES[Array.IndexOf(INDATATYPE, "SET_CONTROL_BOUND")],
                 _ctrlboundbyte
             }
         );
@@ -386,11 +403,22 @@ public static class PlutoComm
         }
         JediComm.SendMessage(
             new byte[] {
-                (byte)GetPlutoCodeFromLabel(INDATATYPE, "SET_CONTROL_DIR"),
+                (byte)INDATATYPECODES[Array.IndexOf(INDATATYPE, "SET_CONTROL_DIR")],
                 (byte) ctrlDir
             }
         );
     }
+
+    public static void resetPacketNo()
+    {
+        JediComm.SendMessage(new byte[] { (byte)INDATATYPECODES[Array.IndexOf(INDATATYPE, "RESET_PACKETNO")] });
+    }
+
+    public static void sendHeartbeat()
+    {
+        JediComm.SendMessage(new byte[] { (byte)INDATATYPECODES[Array.IndexOf(INDATATYPE, "HEARTBEAT")] });
+    }   
+
 }
 
 public static class ConnectToRobot
