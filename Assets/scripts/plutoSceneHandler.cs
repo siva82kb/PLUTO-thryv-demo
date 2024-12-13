@@ -69,6 +69,9 @@ public class Pluto_SceneHandler : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
+        // Ensure the application continues running even when in the background
+        Application.runInBackground = true;
+
         // Initialize UI
         InitializeUI();
         // Attach callbacks

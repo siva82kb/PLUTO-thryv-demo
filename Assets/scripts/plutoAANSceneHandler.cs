@@ -41,13 +41,13 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
 
     // Control variables
     private bool isRunning = false;
-    private float controlTarget = 0.0f;
-    private float controlBound = 0.0f;
+    //private float controlTarget = 0.0f;
+    //private float controlBound = 0.0f;
     private const float tgtDuration = 3.0f;
     private float _currentTime = 0;
     private float _initialTarget = 0;
     private float _finalTarget = 0;
-    private bool _changingTarget = false;
+    //private bool _changingTarget = false;
 
     // Discrete movements related variables
     private uint trialNo = 0;
@@ -83,7 +83,10 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
     private const float cbChangeDuration = 2.0f;
     private sbyte currControlDir = 0;
     private float _currCBforDisplay;
-    private int successRate;
+    //private int successRate;
+
+    // AAN class
+    private PlutoAANController aanCtrler;
 
     // Target Display Scaling
     private const float xmax = 12f;
@@ -103,6 +106,9 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
+        // Ensure the application continues running even when in the background
+        Application.runInBackground = true;
+        
         // Initialize UI
         InitializeUI();
         // Attach callbacks
@@ -217,17 +223,8 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
         {
             case DiscreteMovementTrialState.Rest:
                 trialDuration = 0f;
-                // Compute the new control bound.
-                if (successRate >= 3)
-                {
-                    prevControlBound = PlutoComm.controlBound;
-                    currControlBound = 0.9f * currControlBound;
-                }
-                else if (successRate < 0)
-                {
-                    prevControlBound = PlutoComm.controlBound;
-                    currControlBound = Math.Min(1.0f, 1.1f * currControlBound);
-                }
+                prevControlBound = PlutoComm.controlBound;
+                currControlBound = aanCtrler.getControlBoundForTrial();
                 trialNo += 1; 
                 UpdateCBAdaptDetailsDisplay();
                 // Break if logging is not selected.
@@ -252,32 +249,20 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
                 // Start the position control to the tatget location.
                 _initialTarget = PlutoComm.angle;
                 _finalTarget = _trialTarget;
+                // Set new trial target.
+                aanCtrler.setNewTrialDetails(_initialTarget, _finalTarget);
                 // Set control direction
-                currControlDir = (sbyte)Math.Sign(_finalTarget - _initialTarget);
-                PlutoComm.setControlDir(currControlDir);
+                PlutoComm.setControlDir(aanCtrler.getControlDirectionForTrial());
                 _tempIntraStateTimer = 0f;
                 break;
             case DiscreteMovementTrialState.Success:
-                if (successRate < 0)
-                {
-                    successRate = 1;
-                }
-                else
-                {
-                    successRate += 1;
-                }
+                // Update trial result.
+                aanCtrler.upateTrialResult(true);
                 // Update adaptation row.
                 WriteTrialRowInfo(1);
                 break;
             case DiscreteMovementTrialState.Failure:
-                if (successRate >= 0)
-                {
-                    successRate = -1;
-                }
-                else
-                {
-                    successRate -= 1;
-                }
+                aanCtrler.upateTrialResult(false);
                 WriteTrialRowInfo(0);
                 break;
         }
@@ -375,6 +360,9 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
         }
         else
         {
+            // Pluto AAN controller
+            aanCtrler = new PlutoAANController();
+            // Change button text
             btnStartStop.GetComponentInChildren<TMP_Text>().text = "Stop Demo";
             isRunning = true;
             // Set Control mode.
@@ -382,7 +370,7 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
             PlutoComm.setControlBound(currControlBound);
             PlutoComm.setControlDir(0);
             trialNo = 0;
-            successRate = 0;
+            //successRate = 0;
             // Start the state machine.
             SetTrialState(DiscreteMovementTrialState.Rest);
         }
@@ -463,11 +451,11 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
         String[] rowcomps = new string[]
         {
             $"{trialNo}",
-            $"{_trialTarget}",
-            $"{_initialTarget}",
+            $"{aanCtrler.targetPosition}",
+            $"{aanCtrler.initialPosition}",
             $"{successfailure}",
-            $"{successRate}",
-            $"{currControlBound}",
+            $"{aanCtrler.successRate}",
+            $"{aanCtrler.previousCtrlBound}",
             $"{currControlDir}",
             $"{logRawFileName}"
         };
@@ -578,7 +566,7 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
             _dispstr += $"\nTarget           : -";
         } else
         {
-            _dispstr += $"\nTarget           : {_trialTarget:F2} [{_currTgtForDisplay:F2}]";
+            _dispstr += $"\nTarget           : {aanCtrler.targetPosition:F2} [{_currTgtForDisplay:F2}]";
         }
         _dispstr += $"\nControl Bound    : {_currCBforDisplay:F2}";
         textTrialDetails.SetText(_dispstr);
@@ -595,7 +583,7 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
         string _dispstr = "Control Bound Adpatation Details\n";
         _dispstr += "--------------------------------\n";
         _dispstr += $"Trial No.           : {trialNo}\n";
-        _dispstr += $"Success Rate        : {successRate}\n";
+        _dispstr += $"Success Rate        : {aanCtrler.successRate}\n";
         _dispstr += $"Current Ctrl Bound  : {currControlBound:F2}\n";
         _dispstr += $"Prev Ctrl Bound     : {prevControlBound:F2}\n";
         _dispstr += $"Adaptation Log File : {logAdaptFileName}\n";
