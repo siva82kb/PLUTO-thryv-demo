@@ -29,8 +29,8 @@ public class PlutoAANController
         assistFactor = assist;
         initialPosition = 0;
         targetPosition = 0;
-        currentCtrlBound = 0.16f;
-        previousCtrlBound = 0.16f;
+        currentCtrlBound = 1.0f;
+        previousCtrlBound = 1.0f;
         successRate = 0;
         trialRunning = false;
     }

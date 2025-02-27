@@ -18,8 +18,7 @@ public static class PlutoComm
         "Forearm Pron/Supination",
         "Hand Open/Closing",
         "FME1",
-        "FME2",
-        "NO Mechanism"
+        "FME2"
     };
     public static readonly string[] CALIBRATION = new string[] { "NOCALIB", "YESCALIB" };
     public static readonly string[] CONTROLTYPE = new string[] { "NONE", "POSITION", "RESIST", "TORQUE", "POSITIONAAN" };
