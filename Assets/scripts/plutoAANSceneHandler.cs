@@ -30,6 +30,9 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
     public GameObject targetCircle;
     public GameObject actualCircle;
 
+    // ROM midpoint marker
+    public GameObject romMidPoint;
+
     // Start/Stop Demo button
     public UnityEngine.UI.Button btnStartStop;
 
@@ -41,13 +44,10 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
 
     // Control variables
     private bool isRunning = false;
-    //private float controlTarget = 0.0f;
-    //private float controlBound = 0.0f;
     private const float tgtDuration = 3.0f;
     private float _currentTime = 0;
     private float _initialTarget = 0;
     private float _finalTarget = 0;
-    //private bool _changingTarget = false;
 
     // Discrete movements related variables
     private uint trialNo = 0;
@@ -94,8 +94,6 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
     // Logging related variables
     // Variable to indicate if logging is to be started from the start of the next trial,
     // if the demo is already running.
-    //private bool readyToLog = false;
-    //private bool isLogging = false;
     private string fileNamePrefix = null;
     private string logRawFileName = null;
     private StreamWriter logRawFile = null;
@@ -161,6 +159,12 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
                 actualCircle.transform.position.y,
                 actualCircle.transform.position.z
             );
+            // Display the ROM midpoint.
+            romMidPoint.transform.position = new Vector3(
+                (2 * PlutoComm.romMidPoint / PlutoComm.CALIBANGLE[PlutoComm.mechanism] - 1) * xmax,
+                romMidPoint.transform.position.y,
+                romMidPoint.transform.position.z
+            );
         }
     }
 
@@ -186,10 +190,6 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
                 }
                 break;
             case DiscreteMovementTrialState.Moving:
-                // Update control bound smoothly.
-                UpdateControlBoundSmoothly();
-                // Update the position control target smoothly.
-                UpdatePositionTargetSmoothly();
                 // Check if the target has been reached
                 if (_tgtreached)
                 {
@@ -246,13 +246,15 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
                 );
                 break;
             case DiscreteMovementTrialState.Moving:
+                // Set the new control bound
+                PlutoComm.setControlBound(currControlBound);
                 // Start the position control to the tatget location.
                 _initialTarget = PlutoComm.angle;
                 _finalTarget = _trialTarget;
                 // Set new trial target.
                 aanCtrler.setNewTrialDetails(_initialTarget, _finalTarget);
-                // Set control direction
-                PlutoComm.setControlDir(aanCtrler.getControlDirectionForTrial());
+                // Set new target
+                PlutoComm.setControlTarget(_finalTarget, tgtDuration);
                 _tempIntraStateTimer = 0f;
                 break;
             case DiscreteMovementTrialState.Success:
@@ -305,17 +307,6 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
         PlutoComm.setControlBound(_currCBforDisplay);
     }
 
-    private void UpdatePositionTargetSmoothly()
-    {
-        float _t = (trialDuration- stateStartTime) / tgtDuration;
-        // Limit _t between 0 and 1.
-        _t = Mathf.Clamp(_t, 0, 1);
-        // Compute the current target value using the minimum jerk trajectory.
-        _currTgtForDisplay = _initialTarget + (_finalTarget - _initialTarget) * (10 * Mathf.Pow(_t, 3) - 15 * Mathf.Pow(_t, 4) + 6 * Mathf.Pow(_t, 5));
-        // Update position target
-        PlutoComm.setControlTarget(_currTgtForDisplay);
-    }
-
     private void onNewPlutoData()
     {
         // Log data if needed. Else move on.
@@ -334,11 +325,11 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
             $"{PlutoComm.mechanism}",
             $"{PlutoComm.button}",
             $"{PlutoComm.angle}",
-            $"{PlutoComm.torque}",
             $"{PlutoComm.control}",
+            $"{PlutoComm.target}",
             $"{PlutoComm.controlBound}",
             $"{PlutoComm.controlDir}",
-            $"{PlutoComm.target}",
+            $"{PlutoComm.desired}",
             $"{PlutoComm.err}",
             $"{PlutoComm.errDiff}",
             $"{PlutoComm.errSum}"
@@ -368,23 +359,11 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
             // Set Control mode.
             PlutoComm.setControlType("POSITIONAAN");
             PlutoComm.setControlBound(currControlBound);
-            PlutoComm.setControlDir(0);
             trialNo = 0;
             //successRate = 0;
             // Start the state machine.
             SetTrialState(DiscreteMovementTrialState.Rest);
         }
-    }
-
-    private (float currTgtValue, bool isTgtChanging) computeCurrentTarget()
-    {
-        float _t = (Time.time - _currentTime) / tgtDuration;
-        // Limit _t between 0 and 1.
-        _t = Mathf.Clamp(_t, 0, 1);
-        // Compute the current target value using the minimum jerk trajectory.
-        float _currtgt = _initialTarget + (_finalTarget - _initialTarget) * (10 * Mathf.Pow(_t, 3) - 15 * Mathf.Pow(_t, 4) + 6 * Mathf.Pow(_t, 5));
-        // return if the final target has been reached.
-        return (_currtgt, _t < 1);
     }
 
     private void OnDataLogChange()
@@ -425,7 +404,7 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
         logRawFile.WriteLine($"CompileDate = {PlutoComm.compileDate}");
         logRawFile.WriteLine($"Actuated = {PlutoComm.actuated}");
         logRawFile.WriteLine($"Start Datetime = {DateTime.Now:yyyy/MM/dd HH-mm-ss.ffffff}");
-        logRawFile.WriteLine("time, packetno, status, datatype, errorstatus, controltype, calibration, mechanism, button, angle, torque, control, controlbound, controldir, target, error, errordiff, errorsum");
+        logRawFile.WriteLine("time, packetno, status, datatype, errorstatus, controltype, calibration, mechanism, button, angle, control, target, controlbound, controldir, desired, error, errordiff, errorsum");
     }
 
     private void CreateAdaptLogFile()
@@ -535,10 +514,11 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
         {
             _dispstr += $" [{PlutoComm.getHOCDisplay(PlutoComm.angle),6:F2} cm]";
         }
-        _dispstr += $"\nTorque        : {0f,6:F2} Nm";
         _dispstr += $"\nControl       : {PlutoComm.control,6:F2}";
         _dispstr += $"\nCtrl Bnd (Dir): {PlutoComm.controlBound,6:F2} ({PlutoComm.controlDir})";
+        _dispstr += $"\nROM midpoint  : {1.0f * PlutoComm.romMidPoint,6:F2}";
         _dispstr += $"\nTarget        : {PlutoComm.target,6:F2}";
+        _dispstr += $"\nDesired       : {PlutoComm.desired,6:F2}";
         if (PlutoComm.OUTDATATYPE[PlutoComm.dataType] == "DIAGNOSTICS")
         {
             _dispstr += $"\nError         : {PlutoComm.err,6:F2}";

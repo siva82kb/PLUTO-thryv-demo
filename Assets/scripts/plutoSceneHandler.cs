@@ -32,10 +32,10 @@ public class Pluto_SceneHandler : MonoBehaviour
     public UnityEngine.UI.Slider sldrTarget;
     public TextMeshProUGUI textCtrlBound;
     public UnityEngine.UI.Slider sldrCtrlBound;
-    public TextMeshProUGUI textCtrlDir;
-    public UnityEngine.UI.Slider sldrCtrlDir;
-    public TMP_InputField inputDuration;
-    public UnityEngine.UI.Button btnNextRandomTarget;
+    public TextMeshProUGUI textReachDur;
+    public UnityEngine.UI.Slider sldrReachDur;
+    public UnityEngine.UI.Button btnSetTarget;
+    public UnityEngine.UI.Button btnResetTarget;
 
     // AAN Scene Button
     public UnityEngine.UI.Button btnAANDemo;
@@ -51,14 +51,7 @@ public class Pluto_SceneHandler : MonoBehaviour
     // Control variables
     private bool isControl = false;
     private bool _changeSliderLimits = false;
-    private float controlTarget = 0.0f;
     private float controlBound = 0.0f;
-    private sbyte controlDir = 0;
-    private float tgtDuration = 2.0f;
-    private float _currentTime = 0;
-    private float _initialTarget = 0;
-    private float _finalTarget = 0;
-    private bool _changingTarget = false;
 
     // Logging related variables
     private bool isLogging = false;
@@ -93,18 +86,6 @@ public class Pluto_SceneHandler : MonoBehaviour
         // Pluto heartbeat
         PlutoComm.sendHeartbeat();
 
-        // Check if there is an changing target being sent to the robot.
-        if (_changingTarget)
-        {
-            // Compute the current target value.
-            var _tgt = computeCurrentTarget();
-            // Set the current target value.
-            controlTarget = _tgt.currTgtValue;
-            // Set the changing target flag.
-            _changingTarget = _tgt.isTgtChanging;
-            // Set the control target.
-            PlutoComm.setControlTarget(controlTarget);
-        }
         // Udpate UI
         UpdateUI();
 
@@ -127,12 +108,11 @@ public class Pluto_SceneHandler : MonoBehaviour
         ddControlSelect.onValueChanged.AddListener(delegate { OnControlModeChange(); });
 
         // Slider value change.
-        sldrTarget.onValueChanged.AddListener(delegate { OnControlTargetChange(); });
         sldrCtrlBound.onValueChanged.AddListener(delegate { OnControlBoundChange(); });
-        sldrCtrlDir.onValueChanged.AddListener(delegate { OnControlDirChange(); });
 
         // Button click.
-        btnNextRandomTarget.onClick.AddListener(delegate { OnNextRandomTarget(); });
+        btnSetTarget.onClick.AddListener(delegate { PlutoComm.setControlTarget(sldrTarget.value, sldrReachDur.value); });
+        btnResetTarget.onClick.AddListener(delegate { PlutoComm.setControlTarget(999, 0); });
 
         // AAN Demo Button click.
         btnAANDemo.onClick.AddListener(() => SceneManager.LoadScene(1));
@@ -166,38 +146,16 @@ public class Pluto_SceneHandler : MonoBehaviour
             $"{PlutoComm.mechanism}",
             $"{PlutoComm.button}",
             $"{PlutoComm.angle}",
-            $"{PlutoComm.torque}",
             $"{PlutoComm.control}",
+            $"{PlutoComm.target}",
             $"{PlutoComm.controlBound}",
             $"{PlutoComm.controlDir}",
-            $"{PlutoComm.target}",
+            $"{PlutoComm.desired}",
             $"{PlutoComm.err}",
             $"{PlutoComm.errDiff}",
             $"{PlutoComm.errSum}"
         };
         logFile.WriteLine(String.Join(", ", rowcomps));
-    }
-
-    private void OnControlTargetChange()
-    {
-        string _mech = PlutoComm.MECHANISMS[PlutoComm.mechanism];
-        string _ctrlType = PlutoComm.CONTROLTYPE[PlutoComm.controlType];
-        if (_ctrlType == "TORQUE")
-        {
-            controlTarget = sldrTarget.value;
-        }
-        else if ((_ctrlType == "POSITION") || (_ctrlType == "POSITIONAAN"))
-        {
-            if (_mech == "HOC")
-            {
-                controlTarget = PlutoComm.getHOCAngle(sldrTarget.value);
-            }
-            else
-            {
-                controlTarget = sldrTarget.value;
-            }
-        }
-        PlutoComm.setControlTarget(controlTarget);
     }
 
     private void OnControlBoundChange()
@@ -209,49 +167,6 @@ public class Pluto_SceneHandler : MonoBehaviour
             controlBound = sldrCtrlBound.value;
             PlutoComm.setControlBound(controlBound);
         }
-    }
-
-    private void OnControlDirChange()
-    {
-        string _mech = PlutoComm.MECHANISMS[PlutoComm.mechanism];
-        string _ctrlType = PlutoComm.CONTROLTYPE[PlutoComm.controlType];
-        if ((_ctrlType == "POSITIONAAN"))
-        {
-            controlDir = (sbyte)sldrCtrlDir.value;
-            PlutoComm.setControlDir(controlDir);
-            // Print the hex value of the control direction.
-            Debug.Log($"Control Direction: {controlDir:X}");
-        }
-    }
-
-    private void OnNextRandomTarget()
-    {
-        // Set initial and final target values.
-        // Initial angle is the current robot angle.
-        _initialTarget = PlutoComm.angle;
-        // Final angle is a random value chosen between 0 and the maximum angle for the current mechanism.
-        _finalTarget = UnityEngine.Random.Range(0, PlutoComm.CALIBANGLE[PlutoComm.mechanism]);
-        // Set the target duration.
-        tgtDuration = float.Parse(inputDuration.text);
-        // Set the current time.
-        _currentTime = Time.time;
-        // Compute current target value.
-        var _tgt = computeCurrentTarget();
-        // Set the current target value.
-        controlTarget = _tgt.currTgtValue;
-        // Set the changing target flag.
-        _changingTarget = _tgt.isTgtChanging;
-    }
-
-    private (float currTgtValue, bool isTgtChanging) computeCurrentTarget()
-    {
-        float _t = (Time.time - _currentTime) / tgtDuration;
-        // Limit _t between 0 and 1.
-        _t = Mathf.Clamp(_t, 0, 1);
-        // Compute the current target value using the minimum jerk trajectory.
-        float _currtgt = _initialTarget + (_finalTarget - _initialTarget) * (10 * Mathf.Pow(_t, 3) - 15 * Mathf.Pow(_t, 4) + 6 * Mathf.Pow(_t, 5));
-        // return if the final target has been reached.
-        return (_currtgt, _t < 1);
     }
 
     private void OnControlModeChange()
@@ -272,6 +187,7 @@ public class Pluto_SceneHandler : MonoBehaviour
         if (isCalibrating)
         {
             PlutoComm.calibrate("NOMECH");
+            PlutoComm.setRomMidPointForCurrentMechanism();
             calibState = CalibrationState.WAIT_FOR_ZERO_SET;
         }
     }
@@ -303,7 +219,7 @@ public class Pluto_SceneHandler : MonoBehaviour
         _sw.WriteLine($"CompileDate = {PlutoComm.compileDate}");
         _sw.WriteLine($"Actuated = {PlutoComm.actuated}");
         _sw.WriteLine($"Start Datetime = {DateTime.Now:yyyy/MM/dd HH-mm-ss.ffffff}");
-        _sw.WriteLine("time, packetno, status, datatype, errorstatus, controltype, calibration, mechanism, button, angle, torque, control, controlbound, controldir, target, error, errordiff, errorsum");
+        _sw.WriteLine("time, packetno, status, datatype, errorstatus, controltype, calibration, mechanism, button, angle, control, target, controlbound, controldir, desired, error, errordiff, errorsum");
         return _sw;
     }
 
@@ -327,13 +243,13 @@ public class Pluto_SceneHandler : MonoBehaviour
         calibStateMachineOnButtonRelease();
     }
 
-    private void OnCalibrate()
-    {
-        // Set calibration state.
-        isCalibrating = true;
-        // Set mechanism and start calinration.
-        PlutoComm.calibrate(PlutoComm.MECHANISMS[ddCalibMech.value]);
-    }
+    //private void OnCalibrate()
+    //{
+    //    // Set calibration state.
+    //    isCalibrating = true;
+    //    // Set mechanism and start calinration.
+    //    PlutoComm.calibrate(PlutoComm.MECHANISMS[ddCalibMech.value]);
+    //}
 
     private void InitializeUI()
     {
@@ -372,14 +288,14 @@ public class Pluto_SceneHandler : MonoBehaviour
         tglControlSelect.enabled = PlutoComm.MECHANISMS[PlutoComm.mechanism] != "NOMECH" && !isCalibrating;
         textTarget.SetText("Target: ");
         textCtrlBound.SetText("Control Bound: ");
+        textReachDur.SetText("Reach Duration: ");
         // Enable/Disable control panel.
         string _mech = PlutoComm.MECHANISMS[PlutoComm.mechanism];
         string _ctrlType = PlutoComm.CONTROLTYPE[PlutoComm.controlType];
-        sldrTarget.enabled = (isControl && ((_ctrlType == "TORQUE") || (_ctrlType == "POSITION") || (_ctrlType == "POSITIONAAN")) && !_changingTarget);
+        sldrTarget.enabled = (isControl && ((_ctrlType == "TORQUE") || (_ctrlType == "POSITION") || (_ctrlType == "POSITIONAAN")));
         sldrCtrlBound.enabled = isControl && ((_ctrlType == "POSITION") || (_ctrlType == "POSITIONAAN"));
-        sldrCtrlDir.enabled = isControl && (_ctrlType == "POSITIONAAN");
-        inputDuration.enabled = isControl && ((_ctrlType == "POSITION") || (_ctrlType == "POSITIONAAN"));
-        btnNextRandomTarget.enabled = isControl && ((_ctrlType == "POSITION") || (_ctrlType == "POSITIONAAN"));
+        sldrReachDur.enabled = isControl && ((_ctrlType == "POSITION") || (_ctrlType == "POSITIONAAN"));
+        btnSetTarget.enabled = isControl && ((_ctrlType == "POSITION") || (_ctrlType == "POSITIONAAN"));
         if (isControl)
         {
             // Change slider limits if needed.
@@ -393,9 +309,6 @@ public class Pluto_SceneHandler : MonoBehaviour
                     sldrTarget.maxValue = (float)PlutoComm.MAXTORQUE;
                     sldrTarget.value = 0f;
                     sldrCtrlBound.enabled = false;
-                    // Disable duration input field and next target button.
-                    inputDuration.enabled = false;
-                    btnNextRandomTarget.enabled = false;
                 }
                 else if ((_ctrlType == "POSITION") || (_ctrlType == "POSITIONAAN"))
                 {
@@ -416,23 +329,16 @@ public class Pluto_SceneHandler : MonoBehaviour
                     sldrCtrlBound.minValue = 0;
                     sldrCtrlBound.maxValue = 1;
                     sldrCtrlBound.value = 0.0f;
-                    // Control Direction slider.
-                    sldrCtrlDir.value = 0;
+                    // Reach Duration.
+                    sldrReachDur.value = 0;
                 }
                 _changeSliderLimits = false;
             }
-            else
-            {
-                if ((_ctrlType == "POSITION") || (_ctrlType == "POSITIONAAN"))
-                {
-                    sldrTarget.value = controlTarget;
-                }
-            }
             // Udpate target value.
             string _unit = (_ctrlType == "TORQUE") ? "Nm" : "deg";
-            textTarget.SetText($"Target: {controlTarget,7:F2} {_unit}");
+            textTarget.SetText($"Target: {sldrTarget.value,7:F2} {_unit}");
             textCtrlBound.SetText($"Control Bound: {controlBound,7:F2}");
-            textCtrlDir.SetText($"Control Direction: {controlDir,7:F2}");
+            textReachDur.SetText($"Reach Duration: {sldrReachDur.value,7:F2}");
         }
     }
 
@@ -460,10 +366,11 @@ public class Pluto_SceneHandler : MonoBehaviour
         {
             _dispstr += $" [{PlutoComm.getHOCDisplay(PlutoComm.angle),6:F2} cm]";
         }
-        _dispstr += $"\nTorque        : {0f,6:F2} Nm";
         _dispstr += $"\nControl       : {PlutoComm.control,6:F2}";
-        _dispstr += $"\nCtrl Bnd (Dir): {PlutoComm.controlBound,6:F2} ({PlutoComm.controlDir})"; 
+        _dispstr += $"\nCtrl Bnd (Dir): {PlutoComm.controlBound,6:F2} ({PlutoComm.controlDir})";
+        _dispstr += $"\nROM midpoint  : {1.0f * PlutoComm.romMidPoint,6:F2}";
         _dispstr += $"\nTarget        : {PlutoComm.target,6:F2}";
+        _dispstr += $"\nDesired       : {PlutoComm.desired,6:F2}";
         if (PlutoComm.OUTDATATYPE[PlutoComm.dataType] == "DIAGNOSTICS")
         {
             _dispstr += $"\nError         : {PlutoComm.err,6:F2}";
@@ -510,6 +417,7 @@ public class Pluto_SceneHandler : MonoBehaviour
             case CalibrationState.ROM_SET:
             case CalibrationState.ERROR:
                 calibState = CalibrationState.ALL_DONE;
+                PlutoComm.setRomMidPointForCurrentMechanism();
                 break;
         }
     }

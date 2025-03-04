@@ -46,11 +46,12 @@ public static class PlutoComm
         "SET_DIAGNOSTICS",
         "SET_CONTROL_BOUND",
         "RESET_PACKETNO",
-        "SET_CONTROL_DIR",
+        "SET_ROM_MIDPOINT",
         "HEARTBEAT"
     };
     public static readonly string[] ERRORTYPES = new string[] {
-        "ANGSENSERR",
+        "ANGPOSSENSERR",
+        "ANGVELSENSERR",
         "MCURRSENSERR",
         "NOHEARTBEAT"
     };
@@ -155,11 +156,18 @@ public static class PlutoComm
             return currentStateData[3] & 0x01;
         }
     }
-    static public int button
+    static public int romMidPoint
     {
         get
         {
             return currentStateData[6];
+        }
+    }
+    static public int button
+    {
+        get
+        {
+            return currentStateData[7];
         }
     }
     static public float angle
@@ -169,14 +177,14 @@ public static class PlutoComm
             return currentSensorData[1];
         }
     }
-    static public float torque
+    static public float control
     {
         get
         {
-            return currentSensorData[1];
+            return currentSensorData[2];
         }
     }
-    static public float control
+    static public float target
     {
         get
         {
@@ -197,7 +205,7 @@ public static class PlutoComm
             return (sbyte) currentStateData[5];
         }
     }
-    static public float target
+    static public float desired
     {
         get
         {
@@ -277,8 +285,10 @@ public static class PlutoComm
                 currentStateData[4] = rawBytes[(nSensors + 1) * 4 + 6 + 1];
                 // Update the control direction
                 currentStateData[5] = rawBytes[(nSensors + 1) * 4 + 6 + 2];
-                // Update the button state
+                // Update the ROM mid point
                 currentStateData[6] = rawBytes[(nSensors + 1) * 4 + 6 + 3];
+                // Update the button state
+                currentStateData[7] = rawBytes[(nSensors + 1) * 4 + 6 + 4];
                 break;
             case "VERSION":
                 // Read the bytes into a string.
@@ -295,7 +305,7 @@ public static class PlutoComm
         frameRate = 1 / (runTime - prevRunTime);
 
         // Check if the button has been released.
-        if (previousStateData[6] == 0 && currentStateData[6] == 1)
+        if (previousStateData[7] == 0 && currentStateData[7] == 1)
         {
             OnButtonReleased?.Invoke();
         }
@@ -365,16 +375,16 @@ public static class PlutoComm
         );
     }
 
-    public static void setControlTarget(float target)
+    public static void setControlTarget(float target, float duration)
     {
         byte[] targetBytes = BitConverter.GetBytes(target);
+        byte[] durBytes = BitConverter.GetBytes(duration);
+        Debug.Log($"{target}, {duration}");
         JediComm.SendMessage(
             new byte[] {
                 (byte)INDATATYPECODES[Array.IndexOf(INDATATYPE, "SET_CONTROL_TARGET")],
-                targetBytes[0],
-                targetBytes[1],
-                targetBytes[2],
-                targetBytes[3]
+                targetBytes[0], targetBytes[1], targetBytes[2], targetBytes[3],
+                durBytes[0], durBytes[1], durBytes[2], durBytes[3]
             }
         );
     }
@@ -392,18 +402,28 @@ public static class PlutoComm
         );
     }
 
-
-    public static void setControlDir(sbyte ctrlDir)
+    public static void setRomMidPoint(sbyte romMidPt)
     {
-        // Limit the value to be between 0 and 1.
-        if ((ctrlDir != 1) && (ctrlDir != -1))
+        JediComm.SendMessage(
+            new byte[] {
+                (byte)INDATATYPECODES[Array.IndexOf(INDATATYPE, "SET_ROM_MIDPOINT")],
+                (byte)romMidPt
+            }
+        );
+    }
+
+    public static void setRomMidPointForCurrentMechanism()
+    {
+        byte _rommid = 0;
+        // Check if the current mechanism is is WFE, WURD or FPS.
+        if (MECHANISMS[mechanism] == "WFE" || MECHANISMS[mechanism] == "WURD" || MECHANISMS[mechanism] == "FPS")
         {
-            ctrlDir = 0;
+            _rommid = (byte) (CALIBANGLE[mechanism] / 2);
         }
         JediComm.SendMessage(
             new byte[] {
-                (byte)INDATATYPECODES[Array.IndexOf(INDATATYPE, "SET_CONTROL_DIR")],
-                (byte) ctrlDir
+                (byte)INDATATYPECODES[Array.IndexOf(INDATATYPE, "SET_ROM_MIDPOINT")],
+                _rommid
             }
         );
     }
