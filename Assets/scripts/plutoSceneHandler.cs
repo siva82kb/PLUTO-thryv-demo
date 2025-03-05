@@ -187,7 +187,6 @@ public class Pluto_SceneHandler : MonoBehaviour
         if (isCalibrating)
         {
             PlutoComm.calibrate("NOMECH");
-            PlutoComm.setRomMidPointForCurrentMechanism();
             calibState = CalibrationState.WAIT_FOR_ZERO_SET;
         }
     }
@@ -242,14 +241,6 @@ public class Pluto_SceneHandler : MonoBehaviour
         // Run the calibration state machine
         calibStateMachineOnButtonRelease();
     }
-
-    //private void OnCalibrate()
-    //{
-    //    // Set calibration state.
-    //    isCalibrating = true;
-    //    // Set mechanism and start calinration.
-    //    PlutoComm.calibrate(PlutoComm.MECHANISMS[ddCalibMech.value]);
-    //}
 
     private void InitializeUI()
     {

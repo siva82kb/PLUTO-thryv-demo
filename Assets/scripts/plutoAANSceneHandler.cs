@@ -274,8 +274,6 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
     public void AttachControlCallbacks()
     {
         // Toggle button
-        //tglCalibSelect.onValueChanged.AddListener(delegate { OnCalibrationChange(); });
-        //tglControlSelect.onValueChanged.AddListener (delegate { OnControlChange(); });
         tglDataLog.onValueChanged.AddListener(delegate { OnDataLogChange(); });
 
         // Button click.
@@ -288,23 +286,6 @@ public class Pluto_AAN_SceneHandler : MonoBehaviour
         PlutoComm.OnButtonReleased += onPlutoButtonReleased;
         //PlutoComm.OnControlModeChange += onPlutoControlModeChange;
         PlutoComm.OnNewPlutoData += onNewPlutoData;
-    }
-
-    private void UpdateControlBoundSmoothly()
-    {
-        if ((prevControlBound == currControlBound) ||
-            ((trialDuration - stateStartTime) >= cbChangeDuration))
-        {
-            return;
-        }
-        // Implement the minimum jerk trajectory.
-        float _t = (trialDuration - stateStartTime) / cbChangeDuration;
-        // Limit _t between 0 and 1.
-        _t = Mathf.Clamp(_t, 0, 1);
-        // Compute the CB value using the minimum jerk trajectory.
-        _currCBforDisplay = prevControlBound + (currControlBound - prevControlBound) * (10 * Mathf.Pow(_t, 3) - 15 * Mathf.Pow(_t, 4) + 6 * Mathf.Pow(_t, 5));
-        // Update control bound.
-        PlutoComm.setControlBound(_currCBforDisplay);
     }
 
     private void onNewPlutoData()
